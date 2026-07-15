@@ -1,5 +1,4 @@
-// services/ocr/imageSegmenter.js
-import sharp from "sharp";
+const sharp = require("sharp");
 
 async function segmentTallImage(imageBuffer, segmentHeight = 1800, overlap = 100) {
   const metadata = await sharp(imageBuffer).metadata();
@@ -12,14 +11,11 @@ async function segmentTallImage(imageBuffer, segmentHeight = 1800, overlap = 100
       .extract({ left: 0, top: y, width: metadata.width, height })
       .toBuffer();
 
-    segments.push({
-      buffer: segmentBuffer,
-      offsetY: y,          // để cộng ngược lại tọa độ gốc sau này
-      height
-    });
-
-    y += segmentHeight - overlap; // trừ overlap để tránh cắt đúng giữa dòng chữ
+    segments.push({ buffer: segmentBuffer, offsetY: y, height });
+    y += segmentHeight - overlap;
   }
 
   return { segments, originalWidth: metadata.width, originalHeight: metadata.height };
 }
+
+module.exports = { segmentTallImage };

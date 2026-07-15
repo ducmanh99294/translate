@@ -1,12 +1,7 @@
-// services/translation/claudeClient.js
-import Anthropic from "@anthropic-ai/sdk";
-
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
 
 async function translateImageSegment(imageBase64, glossary) {
-  const glossaryText = glossary
-    .map(g => `${g.term} → ${g.translation}`)
-    .join("\n");
+  const glossaryText = glossary.map((g) => `${g.term} → ${g.translation}`).join("\n");
 
   const systemPrompt = `Bạn là công cụ dịch truyện tranh. Nhiệm vụ:
 1. Đọc TẤT CẢ chữ trong ảnh (lời thoại, chú thích, SFX).
@@ -26,26 +21,37 @@ CHỈ trả về JSON theo đúng schema sau, không thêm text nào khác:
   ]
 }`;
 
-  const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 4000,
-    system: systemPrompt,
-    messages: [
-      {
-        role: "user",
-        content: [
-          {
-            type: "image",
-            source: { type: "base64", media_type: "image/png", data: imageBase64 }
-          },
-          { type: "text", text: "Đọc và dịch toàn bộ chữ trong ảnh này." }
-        ]
-      }
-    ]
+  const response = await fetch(ANTHROPIC_API_URL, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-api-key": process.env.ANTHROPIC_API_KEY,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-6",
+      max_tokens: 4000,
+      system: systemPrompt,
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "image", source: { type: "base64", media_type: "image/png", data: imageBase64 } },
+            { type: "text", text: "Đọc và dịch toàn bộ chữ trong ảnh này." },
+          ],
+        },
+      ],
+    }),
   });
 
-  const text = response.content.find(c => c.type === "text")?.text || "{}";
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`Anthropic API lỗi ${response.status}: ${errText}`);
+  }
+
+  const data = await response.json();
+  const text = data.content.find((c) => c.type === "text")?.text || "{}";
   return JSON.parse(text.replace(/```json|```/g, "").trim());
 }
 
-export { translateImageSegment };
+module.exports = { translateImageSegment };

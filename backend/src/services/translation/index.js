@@ -1,6 +1,8 @@
-// services/translation/index.js
+const { segmentTallImage } = require("../ocr/imageSegmenter");
+const { translateImageSegment } = require("./claudeClient");
+
 async function translateFullChapter(imageBuffer, glossary) {
-  const { segments, originalWidth, originalHeight } = await segmentTallImage(imageBuffer);
+  const { segments, originalHeight } = await segmentTallImage(imageBuffer);
   const allTextBlocks = [];
   const allEntities = [];
 
@@ -8,7 +10,6 @@ async function translateFullChapter(imageBuffer, glossary) {
     const base64 = seg.buffer.toString("base64");
     const result = await translateImageSegment(base64, glossary);
 
-    // quy đổi bbox từ % trong segment -> % trong ảnh gốc
     for (const block of result.textBlocks) {
       const absoluteY = seg.offsetY + block.bbox.y * seg.height;
       allTextBlocks.push({
@@ -17,8 +18,8 @@ async function translateFullChapter(imageBuffer, glossary) {
           x: block.bbox.x,
           y: absoluteY / originalHeight,
           width: block.bbox.width,
-          height: (block.bbox.height * seg.height) / originalHeight
-        }
+          height: (block.bbox.height * seg.height) / originalHeight,
+        },
       });
     }
     allEntities.push(...result.detectedEntities);
@@ -26,3 +27,5 @@ async function translateFullChapter(imageBuffer, glossary) {
 
   return { textBlocks: allTextBlocks, entities: allEntities };
 }
+
+module.exports = { translateFullChapter };

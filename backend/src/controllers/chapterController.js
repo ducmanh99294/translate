@@ -1,17 +1,14 @@
-// controllers/chapter.controller.js
-import Chapter from "../models/Chapter.js";
-import TextOverlay from "../models/TextOverlay.js";
-import TranslationJob from "../models/TranslationJob.js";
-import Glossary from "../models/Glossary.js";
-import { scrapeChapterImages } from "../services/scraper/index.js";
-import { translateFullChapter } from "../services/translation/index.js";
-import axios from "axios";
+const Chapter = require("../models/Chapter");
+const TextOverlay = require("../models/TextOverlay");
+const TranslationJob = require("../models/TranslationJob");
+const Glossary = require("../models/Glossary");
+const { scrapeChapterImages } = require("../services/scraper");
+const { translateFullChapter } = require("../services/translation");
 
-// GET /api/chapters/:id — trả overlay có sẵn, hoặc trigger job nếu chưa xử lý
-export async function getChapter(req, res) {
+exports.getChapter = async (req, res) => {
   const { id } = req.params;
   const chapter = await Chapter.findById(id);
-  if (!chapter) return res.status(404).json({ error: "Chapter không tồn tại" });
+  if (!chapter) return res.status(404).json({ success: false, message: "Chapter không tồn tại" });
 
   const allDone = chapter.images.every((img) => img.status === "translated");
 
@@ -20,47 +17,47 @@ export async function getChapter(req, res) {
     return res.json({ status: "ready", chapter, overlays });
   }
 
-  // upsert job — tránh tạo trùng nếu nhiều user cùng request 1 lúc (race condition)
   await TranslationJob.findOneAndUpdate(
     { chapterId: id },
     { $setOnInsert: { status: "queued", attempts: 0 } },
     { upsert: true, new: true }
   );
 
-  return res.json({ status: "processing" });
-}
+  res.json({ status: "processing" });
+};
 
-// POST /api/chapters/import — { sourceUrl } → scrape ảnh, tạo Chapter + Job
-export async function importChapter(req, res) {
-  const { sourceUrl, seriesId, chapterNumber, title } = req.body;
+exports.importChapter = async (req, res) => {
+  try {
+    const { sourceUrl, seriesId, chapterNumber, title } = req.body;
 
-  const existing = await Chapter.findOne({ seriesId, chapterNumber });
-  if (existing) return res.json({ chapterId: existing._id, status: "already_exists" });
+    const existing = await Chapter.findOne({ seriesId, chapterNumber });
+    if (existing) return res.json({ chapterId: existing._id, status: "already_exists" });
 
-  const images = await scrapeChapterImages(sourceUrl); // trả về [{order, originalUrl, height, width}]
+    const images = await scrapeChapterImages(sourceUrl);
 
-  const chapter = await Chapter.create({
-    seriesId,
-    chapterNumber,
-    title,
-    sourceUrl,
-    images: images.map((img) => ({ ...img, status: "pending" })),
-  });
+    const chapter = await Chapter.create({
+      seriesId,
+      chapterNumber,
+      title,
+      sourceUrl,
+      images: images.map((img) => ({ ...img, status: "pending" })),
+    });
 
-  await TranslationJob.create({ chapterId: chapter._id, status: "queued" });
+    await TranslationJob.create({ chapterId: chapter._id, status: "queued" });
 
-  return res.status(201).json({ chapterId: chapter._id, status: "queued" });
-}
+    res.status(201).json({ chapterId: chapter._id, status: "queued" });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
 
-// GET /api/chapters/:id/status — polling
-export async function getChapterStatus(req, res) {
+exports.getStatus = async (req, res) => {
   const job = await TranslationJob.findOne({ chapterId: req.params.id });
   if (!job) return res.json({ status: "not_found" });
-  return res.json({ status: job.status, errorMessage: job.errorMessage });
-}
+  res.json({ status: job.status, errorMessage: job.errorMessage });
+};
 
-// Hàm xử lý thật sự — được gọi bởi worker, không phải route trực tiếp
-export async function processTranslationJob(job) {
+exports.processTranslationJob = async (job) => {
   const chapter = await Chapter.findById(job.chapterId);
   if (!chapter) throw new Error("Chapter không tồn tại");
 
@@ -68,7 +65,11 @@ export async function processTranslationJob(job) {
 
   for (const img of chapter.images) {
     try {
-      const imageBuffer = (await axios.get(img.originalUrl, { responseType: "arraybuffer" })).data;
+      // dùng fetch built-in thay vì axios
+      const response = await fetch(img.originalUrl);
+      if (!response.ok) throw new Error(`Tải ảnh thất bại: HTTP ${response.status}`);
+      const imageBuffer = Buffer.from(await response.arrayBuffer());
+
       const { textBlocks, entities } = await translateFullChapter(imageBuffer, glossary);
 
       await TextOverlay.insertMany(
@@ -81,7 +82,6 @@ export async function processTranslationJob(job) {
         }))
       );
 
-      // lưu entity mới phát hiện, chờ admin duyệt
       for (const e of entities) {
         await Glossary.findOneAndUpdate(
           { seriesId: chapter.seriesId, term: e.term },
@@ -100,10 +100,10 @@ export async function processTranslationJob(job) {
       img.status = "translated";
     } catch (err) {
       img.status = "failed";
-      throw err; // để worker set job status = "failed" và có thể retry
+      throw err;
     }
   }
 
   chapter.processedAt = new Date();
   await chapter.save();
-}
+};

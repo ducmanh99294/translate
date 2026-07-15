@@ -1,11 +1,10 @@
-// services/queue/translationWorker.js
-import TranslationJob from "../../models/TranslationJob.js";
-import { processTranslationJob } from "../../controllers/chapter.controller.js";
+const TranslationJob = require("../../models/TranslationJob");
+const { processTranslationJob } = require("../../controllers/chapterController");
 
 const POLL_INTERVAL_MS = 3000;
 const MAX_ATTEMPTS = 3;
 
-export function startWorker() {
+function startWorker() {
   setInterval(async () => {
     const job = await TranslationJob.findOneAndUpdate(
       { status: "queued" },
@@ -21,8 +20,10 @@ export function startWorker() {
     } catch (err) {
       job.attempts += 1;
       job.errorMessage = err.message;
-      job.status = job.attempts >= MAX_ATTEMPTS ? "failed" : "queued"; // retry nếu chưa vượt giới hạn
+      job.status = job.attempts >= MAX_ATTEMPTS ? "failed" : "queued";
       await job.save();
     }
   }, POLL_INTERVAL_MS);
 }
+
+module.exports = { startWorker };
