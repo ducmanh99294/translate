@@ -10,21 +10,17 @@ if (!mongoUri) {
 
 const PORT = Number(process.env.PORT) || 3000
 
-require('./utils/slotCleanup') // chạy job dọn slot hết hạn mỗi phút
 const http = require('http')
 const app = require('./app')
 const connectDB = require('./config/db')
-const { initSocket } = require("./sockets");
-const startAppointmentCron = require("./utils/appoinmentCron");
+// Worker xử lý TranslationJob (OCR + dịch) chạy song song với server
+const { startWorker } = require('./services/queue/translationWorker')
 
 const server = http.createServer(app)
 
 connectDB()
-initSocket(server)
+startWorker()
 
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`)
-
-  startAppointmentCron();
 })
-

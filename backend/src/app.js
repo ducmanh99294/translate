@@ -3,10 +3,10 @@ const cookieParser = require('cookie-parser')
 const cors = require('cors')
 
 const authRoutes = require('./routes/authRoutes')
+const passport = require('./controllers/passport')
 
 const app = express()
 app.set("trust proxy", 1);
-const passport = require("./controllers/passport");
 
 app.use(passport.initialize());
 app.use(express.json())
@@ -23,16 +23,12 @@ app.use("/api/series", require("./routes/seriesRoutes"));
 app.use("/api/chapters", require("./routes/chapterRoutes"));
 app.use("/api/glossary", require("./routes/glossaryRoutes"));
 
-const testRoutes = require("./routes/test");
-
-app.use("/api", testRoutes);
 app.get('/', (req, res) => {
   res.send('Backend is running')
 })
 
 const multer = require('multer')
 
-// Lỗi từ multer / Cloudinary (upload_stream) — trả JSON để frontend hiển thị đúng
 app.use((err, req, res, next) => {
   if (!err) return next()
 
